@@ -135,20 +135,7 @@ function App() {
     }
   };
 
-  const getStatusIcon = (status: RunStatus) => {
-    switch (status) {
-      case 'success':
-        return '✅';
-      case 'failure':
-        return '❌';
-      case 'running':
-        return '🔄';
-      case 'not run yet':
-        return '⏸️';
-      default:
-        return '❓';
-    }
-  };
+  
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -350,7 +337,6 @@ function App() {
                         </TableCell>
                         <TableCell>
                           <Badge variant={getStatusBadgeVariant(connector.last_run_status)}>
-                            <span className="mr-1">{getStatusIcon(connector.last_run_status)}</span>
                             {connector.last_run_status}
                           </Badge>
                         </TableCell>
@@ -440,7 +426,6 @@ function App() {
                   <Label className="text-sm font-medium text-gray-500">Status</Label>
                   <div className="mt-1">
                     <Badge variant={getStatusBadgeVariant(selectedConnector.last_run_status)}>
-                      <span className="mr-1">{getStatusIcon(selectedConnector.last_run_status)}</span>
                       {selectedConnector.last_run_status}
                     </Badge>
                   </div>
@@ -463,7 +448,7 @@ function App() {
               
               <div>
                 <Label className="text-sm font-medium text-gray-500">Configuration</Label>
-                <ScrollArea className="mt-2 h-[300px] w-full border rounded-md">
+                <ScrollArea className="mt-2 h-[500px] w-full border rounded-md">
                   <pre className="p-4 text-xs">
                     {JSON.stringify(selectedConnector.configuration, null, 2)}
                   </pre>
