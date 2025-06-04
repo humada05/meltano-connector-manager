@@ -7,7 +7,7 @@ import { type CreateConnectorInput } from '../schema';
 import { createConnector } from '../handlers/create_connector';
 import { eq } from 'drizzle-orm';
 
-// Simple test input with all required fields
+// Test input with all required fields
 const testInput: CreateConnectorInput = {
   connector_name: 'Test Connector',
   source_tap: 'tap-postgres',
@@ -53,39 +53,26 @@ describe('createConnector', () => {
     expect(connectors[0].updated_at).toBeInstanceOf(Date);
   });
 
-  it('should handle empty configuration object', async () => {
-    const inputWithEmptyConfig: CreateConnectorInput = {
-      connector_name: 'Empty Config Connector',
+  it('should create connector with default empty configuration', async () => {
+    const inputWithoutConfig: CreateConnectorInput = {
+      connector_name: 'Simple Connector',
       source_tap: 'tap-csv',
       target: 'target-postgres',
-      configuration: {}
+      configuration: {} // Zod default
     };
 
-    const result = await createConnector(inputWithEmptyConfig);
+    const result = await createConnector(inputWithoutConfig);
 
+    expect(result.connector_name).toEqual('Simple Connector');
     expect(result.configuration).toEqual({});
-    expect(result.connector_name).toEqual('Empty Config Connector');
   });
 
   it('should enforce unique connector names', async () => {
     // Create first connector
     await createConnector(testInput);
 
-    // Try to create another with the same name
-    expect(createConnector(testInput)).rejects.toThrow(/unique/i);
-  });
-
-  it('should apply default configuration when not provided', async () => {
-    const inputWithoutConfig: CreateConnectorInput = {
-      connector_name: 'Default Config Connector',
-      source_tap: 'tap-csv',
-      target: 'target-postgres',
-      configuration: {} // Explicitly provide empty object instead of relying on default
-    };
-
-    const result = await createConnector(inputWithoutConfig);
-
-    expect(result.configuration).toEqual({});
-    expect(result.connector_name).toEqual('Default Config Connector');
+    // Try to create another with same name
+    await expect(createConnector(testInput))
+      .rejects.toThrow(/duplicate key value violates unique constraint/i);
   });
 });

@@ -16,10 +16,11 @@ export const createConnector = async (input: CreateConnectorInput): Promise<Conn
       .returning()
       .execute();
 
-    // Type assertion to handle the configuration field type mismatch
+    // Convert the database result to match our schema type
+    const connector = result[0];
     return {
-      ...result[0],
-      configuration: result[0].configuration as Record<string, any>
+      ...connector,
+      configuration: connector.configuration as Record<string, any>
     };
   } catch (error) {
     console.error('Connector creation failed:', error);

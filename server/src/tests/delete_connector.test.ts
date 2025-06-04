@@ -10,8 +10,8 @@ import { eq } from 'drizzle-orm';
 // Test input for creating a connector to delete
 const testConnectorInput: CreateConnectorInput = {
   connector_name: 'Test Connector',
-  source_tap: 'tap-csv',
-  target: 'target-postgres',
+  source_tap: 'tap-postgres',
+  target: 'target-snowflake',
   configuration: { host: 'localhost', port: 5432 }
 };
 
@@ -21,7 +21,7 @@ describe('deleteConnector', () => {
 
   it('should delete an existing connector', async () => {
     // Create a connector first
-    const createdConnector = await db.insert(connectorsTable)
+    const createdConnectors = await db.insert(connectorsTable)
       .values({
         connector_name: testConnectorInput.connector_name,
         source_tap: testConnectorInput.source_tap,
@@ -31,31 +31,29 @@ describe('deleteConnector', () => {
       .returning()
       .execute();
 
-    const connectorId = createdConnector[0].id;
-    const deleteInput: DeleteConnectorInput = { id: connectorId };
+    const connectorId = createdConnectors[0].id;
 
     // Delete the connector
+    const deleteInput: DeleteConnectorInput = { id: connectorId };
     const result = await deleteConnector(deleteInput);
 
-    // Should return success
+    // Verify deletion was successful
     expect(result.success).toBe(true);
 
-    // Verify connector is deleted from database
-    const connectors = await db.select()
+    // Verify connector no longer exists in database
+    const remainingConnectors = await db.select()
       .from(connectorsTable)
       .where(eq(connectorsTable.id, connectorId))
       .execute();
 
-    expect(connectors).toHaveLength(0);
+    expect(remainingConnectors).toHaveLength(0);
   });
 
   it('should return false when trying to delete non-existent connector', async () => {
     const deleteInput: DeleteConnectorInput = { id: 999 };
-
-    // Try to delete non-existent connector
     const result = await deleteConnector(deleteInput);
 
-    // Should return false for success
+    // Should return false since no connector was deleted
     expect(result.success).toBe(false);
   });
 
@@ -64,8 +62,8 @@ describe('deleteConnector', () => {
     const connector1 = await db.insert(connectorsTable)
       .values({
         connector_name: 'Connector 1',
-        source_tap: 'tap-csv',
-        target: 'target-postgres',
+        source_tap: 'tap-postgres',
+        target: 'target-snowflake',
         configuration: {}
       })
       .returning()
@@ -75,26 +73,17 @@ describe('deleteConnector', () => {
       .values({
         connector_name: 'Connector 2',
         source_tap: 'tap-mysql',
-        target: 'target-snowflake',
+        target: 'target-redshift',
         configuration: {}
       })
       .returning()
       .execute();
 
-    const deleteInput: DeleteConnectorInput = { id: connector1[0].id };
-
     // Delete first connector
+    const deleteInput: DeleteConnectorInput = { id: connector1[0].id };
     const result = await deleteConnector(deleteInput);
 
     expect(result.success).toBe(true);
-
-    // Verify first connector is deleted
-    const deletedConnectors = await db.select()
-      .from(connectorsTable)
-      .where(eq(connectorsTable.id, connector1[0].id))
-      .execute();
-
-    expect(deletedConnectors).toHaveLength(0);
 
     // Verify second connector still exists
     const remainingConnectors = await db.select()

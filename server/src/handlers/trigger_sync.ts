@@ -8,7 +8,7 @@ export const triggerSync = async (input: TriggerSyncInput): Promise<SyncResponse
   try {
     // Check if connector exists
     const connectors = await db.select()
-      .from(connectorsTable) 
+      .from(connectorsTable)
       .where(eq(connectorsTable.id, input.id))
       .execute();
 
@@ -29,8 +29,9 @@ export const triggerSync = async (input: TriggerSyncInput): Promise<SyncResponse
       };
     }
 
-    // Update connector status to running and set timestamp
-    await db.update(connectorsTable)
+    // Update connector status to running
+    await db
+      .update(connectorsTable)
       .set({
         last_run_status: 'running',
         last_run_timestamp: new Date(),

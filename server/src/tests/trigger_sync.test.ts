@@ -7,16 +7,28 @@ import { type TriggerSyncInput, type CreateConnectorInput } from '../schema';
 import { triggerSync } from '../handlers/trigger_sync';
 import { eq } from 'drizzle-orm';
 
-// Test input
-const testTriggerInput: TriggerSyncInput = {
-  id: 1
-};
+// Helper function to create a test connector
+const createTestConnector = async (overrides?: Partial<CreateConnectorInput>) => {
+  const defaultInput: CreateConnectorInput = {
+    connector_name: 'Test Connector',
+    source_tap: 'tap-postgres',
+    target: 'target-postgres',
+    configuration: { host: 'localhost', port: 5432 }
+  };
 
-const testConnectorInput: CreateConnectorInput = {
-  connector_name: 'Test Connector',
-  source_tap: 'tap-test',
-  target: 'target-test',
-  configuration: { key: 'value' }
+  const input = { ...defaultInput, ...overrides };
+
+  const result = await db.insert(connectorsTable)
+    .values({
+      connector_name: input.connector_name,
+      source_tap: input.source_tap,
+      target: input.target,
+      configuration: input.configuration
+    })
+    .returning()
+    .execute();
+
+  return result[0];
 };
 
 describe('triggerSync', () => {
@@ -24,102 +36,114 @@ describe('triggerSync', () => {
   afterEach(resetDB);
 
   it('should trigger sync for existing connector', async () => {
-    // Create test connector
-    await db.insert(connectorsTable)
-      .values({
-        connector_name: testConnectorInput.connector_name,
-        source_tap: testConnectorInput.source_tap,
-        target: testConnectorInput.target,
-        configuration: testConnectorInput.configuration,
-        last_run_status: 'not run yet'
-      })
-      .execute();
+    const connector = await createTestConnector();
+    const input: TriggerSyncInput = { id: connector.id };
 
-    const result = await triggerSync(testTriggerInput);
+    const result = await triggerSync(input);
 
     expect(result.success).toBe(true);
-    expect(result.message).toEqual('Sync triggered successfully');
-  });
+    expect(result.message).toBe('Sync triggered successfully');
 
-  it('should update connector status to running', async () => {
-    // Create test connector
-    await db.insert(connectorsTable)
-      .values({
-        connector_name: testConnectorInput.connector_name,
-        source_tap: testConnectorInput.source_tap,
-        target: testConnectorInput.target,
-        configuration: testConnectorInput.configuration,
-        last_run_status: 'success'
-      })
-      .execute();
-
-    await triggerSync(testTriggerInput);
-
-    // Verify status updated
-    const connectors = await db.select()
+    // Verify connector status was updated
+    const updatedConnectors = await db.select()
       .from(connectorsTable)
-      .where(eq(connectorsTable.id, testTriggerInput.id))
+      .where(eq(connectorsTable.id, connector.id))
       .execute();
 
-    expect(connectors).toHaveLength(1);
-    expect(connectors[0].last_run_status).toEqual('running');
-    expect(connectors[0].last_run_timestamp).toBeInstanceOf(Date);
-    expect(connectors[0].updated_at).toBeInstanceOf(Date);
+    expect(updatedConnectors).toHaveLength(1);
+    expect(updatedConnectors[0].last_run_status).toBe('running');
+    expect(updatedConnectors[0].last_run_timestamp).toBeInstanceOf(Date);
+    expect(updatedConnectors[0].updated_at).toBeInstanceOf(Date);
   });
 
   it('should return error for non-existent connector', async () => {
-    const result = await triggerSync({ id: 999 });
+    const input: TriggerSyncInput = { id: 999 };
+
+    const result = await triggerSync(input);
 
     expect(result.success).toBe(false);
-    expect(result.message).toEqual('Connector not found');
+    expect(result.message).toBe('Connector not found');
   });
 
-  it('should return error if connector is already running', async () => {
-    // Create test connector with running status
-    await db.insert(connectorsTable)
-      .values({
-        connector_name: testConnectorInput.connector_name,
-        source_tap: testConnectorInput.source_tap,
-        target: testConnectorInput.target,
-        configuration: testConnectorInput.configuration,
-        last_run_status: 'running'
-      })
+  it('should return error when connector is already running', async () => {
+    // Create connector and set it to running status
+    const connector = await createTestConnector();
+    await db
+      .update(connectorsTable)
+      .set({ last_run_status: 'running' })
+      .where(eq(connectorsTable.id, connector.id))
       .execute();
 
-    const result = await triggerSync(testTriggerInput);
+    const input: TriggerSyncInput = { id: connector.id };
+
+    const result = await triggerSync(input);
 
     expect(result.success).toBe(false);
-    expect(result.message).toEqual('Connector is already running');
+    expect(result.message).toBe('Connector is already running');
+
+    // Verify status wasn't changed
+    const updatedConnectors = await db.select()
+      .from(connectorsTable)
+      .where(eq(connectorsTable.id, connector.id))
+      .execute();
+
+    expect(updatedConnectors[0].last_run_status).toBe('running');
   });
 
-  it('should trigger sync from any non-running status', async () => {
+  it('should trigger sync for connector with different statuses', async () => {
     const statuses = ['success', 'failure', 'not run yet'] as const;
 
     for (const status of statuses) {
       // Create connector with specific status
-      const connector = await db.insert(connectorsTable)
-        .values({
-          connector_name: `Test Connector ${status}`,
-          source_tap: testConnectorInput.source_tap,
-          target: testConnectorInput.target,
-          configuration: testConnectorInput.configuration,
-          last_run_status: status
-        })
-        .returning()
+      const connector = await createTestConnector({
+        connector_name: `Test Connector ${status}`
+      });
+      
+      await db
+        .update(connectorsTable)
+        .set({ last_run_status: status })
+        .where(eq(connectorsTable.id, connector.id))
         .execute();
 
-      const result = await triggerSync({ id: connector[0].id });
+      const input: TriggerSyncInput = { id: connector.id };
+
+      const result = await triggerSync(input);
 
       expect(result.success).toBe(true);
-      expect(result.message).toEqual('Sync triggered successfully');
+      expect(result.message).toBe('Sync triggered successfully');
 
-      // Verify status changed to running
+      // Verify status was updated to running
       const updatedConnectors = await db.select()
         .from(connectorsTable)
-        .where(eq(connectorsTable.id, connector[0].id))
+        .where(eq(connectorsTable.id, connector.id))
         .execute();
 
-      expect(updatedConnectors[0].last_run_status).toEqual('running');
+      expect(updatedConnectors[0].last_run_status).toBe('running');
     }
+  });
+
+  it('should update timestamp and updated_at when triggering sync', async () => {
+    const connector = await createTestConnector();
+    const originalUpdatedAt = connector.updated_at;
+    
+    // Wait a tiny bit to ensure timestamp difference
+    await new Promise(resolve => setTimeout(resolve, 10));
+
+    const input: TriggerSyncInput = { id: connector.id };
+
+    const result = await triggerSync(input);
+
+    expect(result.success).toBe(true);
+
+    const updatedConnectors = await db.select()
+      .from(connectorsTable)
+      .where(eq(connectorsTable.id, connector.id))
+      .execute();
+
+    const updatedConnector = updatedConnectors[0];
+    
+    expect(updatedConnector.last_run_timestamp).toBeInstanceOf(Date);
+    expect(updatedConnector.updated_at).toBeInstanceOf(Date);
+    expect(updatedConnector.updated_at > originalUpdatedAt).toBe(true);
   });
 });

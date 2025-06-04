@@ -6,39 +6,39 @@ import { eq } from 'drizzle-orm';
 
 export const updateConnector = async (input: UpdateConnectorInput): Promise<Connector> => {
   try {
-    // Build update values object, excluding id and only including defined fields
-    const updateValues: any = {};
+    // Build update object with only provided fields
+    const updateData: any = {};
     
     if (input.connector_name !== undefined) {
-      updateValues.connector_name = input.connector_name;
+      updateData.connector_name = input.connector_name;
     }
     
     if (input.source_tap !== undefined) {
-      updateValues.source_tap = input.source_tap;
+      updateData.source_tap = input.source_tap;
     }
     
     if (input.target !== undefined) {
-      updateValues.target = input.target;
+      updateData.target = input.target;
     }
     
     if (input.configuration !== undefined) {
-      updateValues.configuration = input.configuration;
+      updateData.configuration = input.configuration;
     }
     
     if (input.last_run_status !== undefined) {
-      updateValues.last_run_status = input.last_run_status;
+      updateData.last_run_status = input.last_run_status;
     }
     
     if (input.last_run_timestamp !== undefined) {
-      updateValues.last_run_timestamp = input.last_run_timestamp;
+      updateData.last_run_timestamp = input.last_run_timestamp;
     }
 
     // Always update the updated_at timestamp
-    updateValues.updated_at = new Date();
+    updateData.updated_at = new Date();
 
-    // Update the connector record
+    // Update connector record
     const result = await db.update(connectorsTable)
-      .set(updateValues)
+      .set(updateData)
       .where(eq(connectorsTable.id, input.id))
       .returning()
       .execute();
@@ -47,7 +47,7 @@ export const updateConnector = async (input: UpdateConnectorInput): Promise<Conn
       throw new Error(`Connector with id ${input.id} not found`);
     }
 
-    // Transform the result to match the Connector schema type
+    // Type assertion to handle the configuration type mismatch
     const connector = result[0];
     return {
       ...connector,

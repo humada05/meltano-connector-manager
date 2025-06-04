@@ -9,13 +9,13 @@ export const getConnectors = async (): Promise<Connector[]> => {
       .from(connectorsTable)
       .execute();
 
-    // Transform results to match the expected schema type
-    return results.map(result => ({
-      ...result,
-      configuration: result.configuration as Record<string, any>
+    return results.map(connector => ({
+      ...connector,
+      // Ensure configuration is properly handled as JSON object
+      configuration: connector.configuration || {}
     }));
   } catch (error) {
-    console.error('Get connectors failed:', error);
+    console.error('Failed to fetch connectors:', error);
     throw error;
   }
 };

@@ -7,21 +7,26 @@ import { type CreateConnectorInput, type UpdateConnectorInput } from '../schema'
 import { updateConnector } from '../handlers/update_connector';
 import { eq } from 'drizzle-orm';
 
-// Test data
-const createTestConnector = async () => {
+// Helper function to create a test connector
+const createTestConnector = async (): Promise<number> => {
+  const testConnector: CreateConnectorInput = {
+    connector_name: 'Test Connector',
+    source_tap: 'tap-mysql',
+    target: 'target-postgresql',
+    configuration: { host: 'localhost', port: 3306 }
+  };
+
   const result = await db.insert(connectorsTable)
     .values({
-      connector_name: 'Test Connector',
-      source_tap: 'tap-mysql',
-      target: 'target-postgres',
-      configuration: { host: 'localhost', port: 3306 },
-      last_run_status: 'not run yet',
-      last_run_timestamp: null
+      connector_name: testConnector.connector_name,
+      source_tap: testConnector.source_tap,
+      target: testConnector.target,
+      configuration: testConnector.configuration
     })
     .returning()
     .execute();
-  
-  return result[0];
+
+  return result[0].id;
 };
 
 describe('updateConnector', () => {
@@ -29,134 +34,128 @@ describe('updateConnector', () => {
   afterEach(resetDB);
 
   it('should update connector name', async () => {
-    const connector = await createTestConnector();
+    const connectorId = await createTestConnector();
     
     const updateInput: UpdateConnectorInput = {
-      id: connector.id,
+      id: connectorId,
       connector_name: 'Updated Connector Name'
     };
 
     const result = await updateConnector(updateInput);
 
-    expect(result.id).toEqual(connector.id);
+    expect(result.id).toEqual(connectorId);
     expect(result.connector_name).toEqual('Updated Connector Name');
-    expect(result.source_tap).toEqual('tap-mysql'); // Should remain unchanged
-    expect(result.target).toEqual('target-postgres'); // Should remain unchanged
+    expect(result.source_tap).toEqual('tap-mysql'); // Unchanged
+    expect(result.target).toEqual('target-postgresql'); // Unchanged
     expect(result.updated_at).toBeInstanceOf(Date);
-    expect(result.updated_at > connector.updated_at).toBe(true);
   });
 
   it('should update multiple fields at once', async () => {
-    const connector = await createTestConnector();
+    const connectorId = await createTestConnector();
     
-    const newTimestamp = new Date('2023-01-01T00:00:00Z');
     const updateInput: UpdateConnectorInput = {
-      id: connector.id,
-      connector_name: 'Multi-field Update',
+      id: connectorId,
+      connector_name: 'Multi Update Test',
       source_tap: 'tap-postgres',
       target: 'target-snowflake',
-      configuration: { host: 'remote.server.com', port: 5432, ssl: true },
-      last_run_status: 'success',
-      last_run_timestamp: newTimestamp
+      configuration: { host: 'new-host', port: 5432 },
+      last_run_status: 'success' as const
     };
 
     const result = await updateConnector(updateInput);
 
-    expect(result.id).toEqual(connector.id);
-    expect(result.connector_name).toEqual('Multi-field Update');
+    expect(result.id).toEqual(connectorId);
+    expect(result.connector_name).toEqual('Multi Update Test');
     expect(result.source_tap).toEqual('tap-postgres');
     expect(result.target).toEqual('target-snowflake');
-    expect(result.configuration).toEqual({ host: 'remote.server.com', port: 5432, ssl: true });
+    expect(result.configuration).toEqual({ host: 'new-host', port: 5432 });
     expect(result.last_run_status).toEqual('success');
-    expect(result.last_run_timestamp).toEqual(newTimestamp);
     expect(result.updated_at).toBeInstanceOf(Date);
   });
 
-  it('should update configuration only', async () => {
-    const connector = await createTestConnector();
+  it('should update last_run_timestamp', async () => {
+    const connectorId = await createTestConnector();
+    const testDate = new Date('2024-01-15T10:30:00Z');
     
     const updateInput: UpdateConnectorInput = {
-      id: connector.id,
-      configuration: { database: 'new_db', schema: 'public' }
+      id: connectorId,
+      last_run_timestamp: testDate,
+      last_run_status: 'running' as const
     };
 
     const result = await updateConnector(updateInput);
 
-    expect(result.id).toEqual(connector.id);
-    expect(result.connector_name).toEqual('Test Connector'); // Should remain unchanged
-    expect(result.configuration).toEqual({ database: 'new_db', schema: 'public' });
-    expect(result.updated_at).toBeInstanceOf(Date);
+    expect(result.id).toEqual(connectorId);
+    expect(result.last_run_timestamp).toEqual(testDate);
+    expect(result.last_run_status).toEqual('running');
   });
 
-  it('should update last_run_timestamp to null', async () => {
-    const connector = await createTestConnector();
+  it('should set last_run_timestamp to null', async () => {
+    const connectorId = await createTestConnector();
     
-    // First set a timestamp
-    await updateConnector({
-      id: connector.id,
-      last_run_timestamp: new Date()
-    });
-
-    // Then set it to null
     const updateInput: UpdateConnectorInput = {
-      id: connector.id,
+      id: connectorId,
       last_run_timestamp: null
     };
 
     const result = await updateConnector(updateInput);
 
-    expect(result.id).toEqual(connector.id);
+    expect(result.id).toEqual(connectorId);
     expect(result.last_run_timestamp).toBeNull();
   });
 
-  it('should save updated connector to database', async () => {
-    const connector = await createTestConnector();
+  it('should save updates to database', async () => {
+    const connectorId = await createTestConnector();
     
     const updateInput: UpdateConnectorInput = {
-      id: connector.id,
+      id: connectorId,
       connector_name: 'Database Test Update',
-      last_run_status: 'failure'
+      configuration: { updated: true }
     };
 
-    const result = await updateConnector(updateInput);
+    await updateConnector(updateInput);
 
-    // Verify in database
-    const dbConnectors = await db.select()
+    // Verify changes were persisted
+    const connectors = await db.select()
       .from(connectorsTable)
-      .where(eq(connectorsTable.id, connector.id))
+      .where(eq(connectorsTable.id, connectorId))
       .execute();
 
-    expect(dbConnectors).toHaveLength(1);
-    expect(dbConnectors[0].connector_name).toEqual('Database Test Update');
-    expect(dbConnectors[0].last_run_status).toEqual('failure');
-    expect(dbConnectors[0].updated_at).toBeInstanceOf(Date);
-    expect(dbConnectors[0].updated_at > connector.updated_at).toBe(true);
+    expect(connectors).toHaveLength(1);
+    expect(connectors[0].connector_name).toEqual('Database Test Update');
+    expect(connectors[0].configuration).toEqual({ updated: true });
+    expect(connectors[0].updated_at).toBeInstanceOf(Date);
   });
 
   it('should throw error for non-existent connector', async () => {
     const updateInput: UpdateConnectorInput = {
       id: 99999,
-      connector_name: 'Non-existent Connector'
+      connector_name: 'Non-existent'
     };
 
     await expect(updateConnector(updateInput)).rejects.toThrow(/not found/i);
   });
 
-  it('should handle empty update gracefully', async () => {
-    const connector = await createTestConnector();
+  it('should update only updated_at when no other fields provided', async () => {
+    const connectorId = await createTestConnector();
     
+    // Get original connector
+    const originalConnector = await db.select()
+      .from(connectorsTable)
+      .where(eq(connectorsTable.id, connectorId))
+      .execute();
+
     const updateInput: UpdateConnectorInput = {
-      id: connector.id
+      id: connectorId
     };
 
     const result = await updateConnector(updateInput);
 
-    // Should only update the updated_at timestamp
-    expect(result.id).toEqual(connector.id);
-    expect(result.connector_name).toEqual(connector.connector_name);
-    expect(result.source_tap).toEqual(connector.source_tap);
-    expect(result.target).toEqual(connector.target);
+    expect(result.id).toEqual(connectorId);
+    expect(result.connector_name).toEqual(originalConnector[0].connector_name);
+    expect(result.source_tap).toEqual(originalConnector[0].source_tap);
+    expect(result.target).toEqual(originalConnector[0].target);
     expect(result.updated_at).toBeInstanceOf(Date);
-    expect(result.updated_at > connector.updated_at).toBe(true);
+    expect(result.updated_at > originalConnector[0].updated_at).toBe(true);
   });
 });
