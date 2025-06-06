@@ -408,7 +408,7 @@ function App() {
 
       {/* Configuration Sheet */}
       <Sheet open={isConfigSheetOpen} onOpenChange={setIsConfigSheetOpen}>
-        <SheetContent className="w-[800px] sm:max-w-xl">
+        <SheetContent className="w-[1000px] sm:max-w-2xl">
           <SheetHeader>
             <SheetTitle>Connector Configuration</SheetTitle>
             <SheetDescription>
